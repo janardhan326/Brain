@@ -1,0 +1,4 @@
+model = tf.keras.models.load_model(
+    "brain_tumor_model.keras",
+    compile=False
+)
