@@ -1,326 +1,144 @@
+```python
 import streamlit as st
 import tensorflow as tf
 import numpy as np
-import cv2
 from PIL import Image
-import os
 
-
-# --------------------------------------------------
+# ============================================================
 # PAGE CONFIGURATION
-# --------------------------------------------------
+# ============================================================
 
 st.set_page_config(
-    page_title="Brain Tumor Detection",
+    page_title="Brain MRI Detection",
     page_icon="🧠",
     layout="centered"
 )
 
+# ============================================================
+# TITLE
+# ============================================================
 
-# --------------------------------------------------
+st.title("🧠 Brain MRI Detection")
+st.write("Upload an MRI image to classify it into one of four categories.")
+
+st.info(
+    "Educational/research project only. "
+    "This application is not a medical diagnosis."
+)
+
+# ============================================================
 # LOAD MODEL
-# --------------------------------------------------
-
-MODEL_PATH = "brain_tumor_model.keras"
-
+# ============================================================
 
 @st.cache_resource
 def load_model():
-
-    if not os.path.exists(MODEL_PATH):
-        return None
-
-    try:
-        model = tf.keras.models.load_model(
-            MODEL_PATH,
-            compile=False
-        )
-
-        return model
-
-    except Exception as e:
-        st.error("Error loading the model:")
-        st.code(str(e))
-        return None
-
+    return tf.keras.models.load_model("brain_tumor_model.keras")
 
 model = load_model()
 
+# ============================================================
+# CLASS NAMES
+# IMPORTANT: Must match train.py
+# ============================================================
 
-# --------------------------------------------------
-# CHECK MODEL
-# --------------------------------------------------
+CLASS_NAMES = [
+    "Glioma",
+    "Meningioma",
+    "Pituitary",
+    "No Tumor"
+]
 
-if model is None:
-
-    st.error(
-        "❌ Brain tumor model was not loaded."
-    )
-
-    st.write(
-        """
-        Make sure that `brain_tumor_model.keras`
-        is present in the same folder as `app.py`.
-        """
-    )
-
-    st.code(
-        """
-        brain-tumor/
-        │
-        ├── app.py
-        ├── brain_tumor_model.keras
-        └── requirements.txt
-        """
-    )
-
-    st.stop()
-
-
-# --------------------------------------------------
-# TITLE
-# --------------------------------------------------
-
-st.title("🧠 Brain Tumor Detection System")
-
-st.write(
-    """
-    Upload a brain MRI image and the trained
-    CNN model will predict the image class.
-    """
-)
-
-st.warning(
-    """
-    ⚠️ Educational/research prototype only.
-    This application is not a medical diagnostic tool.
-    Do not use the prediction for medical decisions.
-    """
-)
-
-
-# --------------------------------------------------
-# MODEL INFORMATION
-# --------------------------------------------------
-
-with st.expander("🔧 Model Information"):
-
-    st.write(
-        "Model input shape:"
-    )
-
-    st.write(
-        model.input_shape
-    )
-
-    st.write(
-        "Model output shape:"
-    )
-
-    st.write(
-        model.output_shape
-    )
-
-
-# --------------------------------------------------
-# UPLOAD IMAGE
-# --------------------------------------------------
+# ============================================================
+# FILE UPLOAD
+# ============================================================
 
 uploaded_file = st.file_uploader(
-    "📤 Upload Brain MRI Image",
+    "Upload MRI Image",
     type=["jpg", "jpeg", "png"]
 )
 
-
-# --------------------------------------------------
-# PROCESS IMAGE
-# --------------------------------------------------
+# ============================================================
+# PREDICTION
+# ============================================================
 
 if uploaded_file is not None:
 
-    try:
+    # Open image
+    img = Image.open(uploaded_file).convert("RGB")
 
-        # Open image
-        image = Image.open(
-            uploaded_file
-        ).convert("RGB")
+    # Display image
+    st.image(
+        img,
+        caption="Uploaded MRI Image",
+        width=300
+    )
 
-        # Display image
-        st.subheader(
-            "📷 Uploaded MRI Image"
+    # Resize to model input size
+    img = img.resize((224, 224))
+
+    # Convert image to NumPy array
+    img_array = np.array(img)
+
+    # Add batch dimension
+    img_array = np.expand_dims(img_array, axis=0)
+
+    # IMPORTANT:
+    # Do NOT divide by 255 here.
+    # EfficientNetB0 handles preprocessing internally.
+    
+    # Predict
+    prediction = model.predict(
+        img_array,
+        verbose=0
+    )[0]
+
+    # Get predicted class
+    predicted_index = np.argmax(prediction)
+
+    predicted_class = CLASS_NAMES[predicted_index]
+
+    # Get confidence
+    confidence = float(prediction[predicted_index]) * 100
+
+    # ========================================================
+    # DISPLAY RESULT
+    # ========================================================
+
+    st.subheader("Prediction")
+
+    if predicted_class == "No Tumor":
+        st.success(
+            f"✅ Result: {predicted_class}"
+        )
+    else:
+        st.warning(
+            f"⚠️ Result: {predicted_class}"
         )
 
-        st.image(
-            image,
-            caption="Brain MRI",
-            use_container_width=True
+    st.write(
+        f"**Confidence: {confidence:.2f}%**"
+    )
+
+    # ========================================================
+    # SHOW ALL CLASS PROBABILITIES
+    # ========================================================
+
+    st.subheader("Class Probabilities")
+
+    for i, class_name in enumerate(CLASS_NAMES):
+
+        probability = float(prediction[i]) * 100
+
+        st.write(
+            f"{class_name}: {probability:.2f}%"
         )
 
-
-        # --------------------------------------------------
-        # ANALYZE BUTTON
-        # --------------------------------------------------
-
-        if st.button(
-            "🔍 Analyze MRI",
-            use_container_width=True
-        ):
-
-            with st.spinner(
-                "Analyzing MRI image..."
-            ):
-
-                # Convert PIL → NumPy
-                img = np.array(image)
-
-                # Resize
-                img = cv2.resize(
-                    img,
-                    (224, 224)
-                )
-
-                # Convert to float
-                img = img.astype(
-                    np.float32
-                )
-
-                # Normalize
-                img = img / 255.0
-
-                # Add batch dimension
-                img = np.expand_dims(
-                    img,
-                    axis=0
-                )
-
-                # Prediction
-                prediction = model.predict(
-                    img,
-                    verbose=0
-                )
-
-                # Get value
-                probability = float(
-                    prediction[0][0]
-                )
-
-
-            # --------------------------------------------------
-            # RESULT
-            # --------------------------------------------------
-
-            st.divider()
-
-            st.subheader(
-                "🤖 Prediction Result"
-            )
-
-
-            if probability >= 0.5:
-
-                result = "Tumor Detected"
-
-                confidence = probability * 100
-
-                st.error(
-                    f"⚠️ {result}"
-                )
-
-            else:
-
-                result = "No Tumor Detected"
-
-                confidence = (
-                    1 - probability
-                ) * 100
-
-                st.success(
-                    f"✅ {result}"
-                )
-
-
-            # --------------------------------------------------
-            # CONFIDENCE
-            # --------------------------------------------------
-
-            st.metric(
-                "Model Confidence",
-                f"{confidence:.2f}%"
-            )
-
-
-            # --------------------------------------------------
-            # PROBABILITY
-            # --------------------------------------------------
-
-            st.subheader(
-                "📊 Tumor Probability"
-            )
-
-            st.progress(
-                min(
-                    max(
-                        probability,
-                        0.0
-                    ),
-                    1.0
-                )
-            )
-
-            st.write(
-                f"Tumor probability: "
-                f"{probability * 100:.2f}%"
-            )
-
-
-    except Exception as e:
-
-        st.error(
-            "❌ Error while processing the image."
+        st.progress(
+            min(probability / 100, 1.0)
         )
 
-        st.code(
-            str(e)
-        )
-
-
-# --------------------------------------------------
-# PROJECT INFORMATION
-# --------------------------------------------------
-
-st.divider()
-
-st.subheader(
-    "📚 About This Project"
-)
-
-st.write(
-    """
-    This project uses a Convolutional Neural Network
-    (CNN) trained on brain MRI images.
-
-    The model performs binary image classification:
-
-    • Class 0 → No Tumor
-    • Class 1 → Tumor
-
-    Image preprocessing:
-
-    • Resize image to 224 × 224
-    • Normalize pixel values
-    • Add batch dimension
-    • Send image to CNN model
-    """
-)
-
-
-st.subheader(
-    "🛠️ Technologies Used"
-)
-
-st.write(
-    """
-    Python | TensorFlow | Keras | OpenCV |
-    NumPy | Pillow | Streamlit
-    """
-)
+    st.caption(
+        "The prediction is generated by an EfficientNetB0 "
+        "image-classification model."
+    )
+```
